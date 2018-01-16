@@ -3,28 +3,60 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
+	"golang.org/x/net/proxy"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"unicode/utf8"
 )
 
-func getDB(c string) *sql.DB {
-	if c == "in" {
-		db, err := sql.Open("mysql",
-			"root:root@tcp(127.0.0.1:3306)/demo_magento2_20171222")
-		if err != nil {
-			log.Fatal(err)
-		}
+const proxyHost string = "127.0.0.1"
+const proxyPort string = "7070"
 
-		err = db.Ping()
-		if err != nil {
-			log.Fatal("DB connection error!")
-		}
-		return db
+const inDBHost string = "hpolsprod.clmlyplvpqds.ap-south-1.rds.amazonaws.com"
+const inDBPort string = "3306"
+const inDBUsername string = "renjinfeng"
+const inDBPassword string = "Shinetech@2017@hp"
+const inDBName string = "hpolsproduction"
+
+func getProxyDialer(addr string) (net.Conn, error) {
+	dialer, err := proxy.SOCKS5("tcp",
+		proxyHost+":"+proxyPort, nil, proxy.Direct)
+	if err != nil {
+		log.Fatal(err)
 	}
-	return nil
+
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return conn, err
+}
+
+func getDBString(c string) string {
+	if c == "in" {
+		return inDBUsername + ":" + inDBPassword + "@mydial(" + inDBHost + ":" + inDBPort + ")/" + inDBName
+	}
+	return ""
+}
+
+func getDB(c string) *sql.DB {
+	s := getDBString(c)
+	//		db, err := sql.Open("mysql",
+	//			"root:root@tcp(127.0.0.1:3306)/demo_magento2_20171222")
+	mysql.RegisterDial("mydial", getProxyDialer)
+	db, err := sql.Open("mysql", s)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("DB connection error!")
+	}
+	return db
 }
 
 func showBundleSkus(country string, skus []string) {
