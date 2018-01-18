@@ -3,14 +3,22 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/go-sql-driver/mysql"
-	"golang.org/x/net/proxy"
 	"log"
 	"net"
 	"os"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/go-sql-driver/mysql"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/net/proxy"
 )
+
+const sshHost string = "hk.php9.cc"
+const sshPort int = 22
+const sshUser string = "shinetechchina"
+const sshPass string = "password"
 
 const proxyHost string = "127.0.0.1"
 const proxyPort string = "7070"
@@ -21,7 +29,16 @@ const inDBUsername string = "renjinfeng"
 const inDBPassword string = "Shinetech@2017@hp"
 const inDBName string = "hpolsproduction"
 
-func getProxyDialer(addr string) (net.Conn, error) {
+//var m myDialer = &ProxyDialer{}
+
+type myDialer interface {
+	Dial(addr string) (net.Conn, error)
+}
+
+type ProxyDialer struct {
+}
+
+func (proxyDiler *ProxyDialer) Dial(addr string) (net.Conn, error) {
 	dialer, err := proxy.SOCKS5("tcp",
 		proxyHost+":"+proxyPort, nil, proxy.Direct)
 	if err != nil {
@@ -35,6 +52,46 @@ func getProxyDialer(addr string) (net.Conn, error) {
 	return conn, err
 }
 
+type SSHDialer struct {
+}
+
+func (sshDialer *SSHDialer) Dial(addr string) (net.Conn, error) {
+	conn, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	agentClient := agent.NewClient(conn)
+
+	sshConfig := &ssh.ClientConfig{
+		User: sshUser,
+		Auth: []ssh.AuthMethod{},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
+		},
+	}
+
+	if agentClient != nil {
+		sshConfig.Auth = append(sshConfig.Auth,
+			ssh.PublicKeysCallback(agentClient.Signers))
+	}
+
+	if sshPass != "" {
+		sshConfig.Auth = append(sshConfig.Auth,
+			ssh.PasswordCallback(func() (string, error) {
+				return sshPass, nil
+			}))
+	}
+
+	sshClient, err := ssh.Dial("tcp",
+		fmt.Sprintf("%s:%d", sshHost, sshPort),
+		sshConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("SSH client running")
+	return sshClient.Dial("tcp", addr)
+}
+
 func getDBString(c string) string {
 	if c == "in" {
 		return inDBUsername + ":" + inDBPassword + "@mydial(" + inDBHost + ":" + inDBPort + ")/" + inDBName
@@ -44,9 +101,11 @@ func getDBString(c string) string {
 
 func getDB(c string) *sql.DB {
 	s := getDBString(c)
-	//		db, err := sql.Open("mysql",
-	//			"root:root@tcp(127.0.0.1:3306)/demo_magento2_20171222")
-	mysql.RegisterDial("mydial", getProxyDialer)
+	//  db, err := sql.Open("mysql",
+	//	    "root:root@tcp(127.0.0.1:3306)/demo_magento2_20171222")
+	//var myDialer ProxyDialer = ProxyDialer{}
+	var myDialer SSHDialer = SSHDialer{}
+	mysql.RegisterDial("mydial", myDialer.Dial)
 	db, err := sql.Open("mysql", s)
 	if err != nil {
 		log.Fatal(err)
