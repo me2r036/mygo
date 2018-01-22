@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -36,7 +37,7 @@ var dialer string = "tcp"
 var myDialer MyDialer
 
 func chooseDialer() {
-	_, err := net.DialTimeout("tcp", goSite, 300)
+	_, err := net.DialTimeout("tcp", goSite, time.Second)
 	if err != nil {
 		dialer = "mydialer"
 		myDialer = &ProxyDialer{}
